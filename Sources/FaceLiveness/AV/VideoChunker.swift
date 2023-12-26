@@ -34,9 +34,9 @@ final class VideoChunker {
 
     func start() {
         guard state == .pending else { return }
-        state = .writing
         assetWriter.startWriting()
         assetWriter.startSession(atSourceTime: .zero)
+        state = .writing
     }
 
     func finish(singleFrame: @escaping (UIImage) -> Void) {
@@ -49,27 +49,25 @@ final class VideoChunker {
 
     func consume(_ buffer: CMSampleBuffer) {
         if state == .awaitingSingleFrame {
-            guard let rotated = buffer.rotateRightUpMirrored() else { return }
-            let singleFrame = singleFrame(from: rotated)
+            guard let imageBuffer = buffer.imageBuffer else { return }
+            let singleFrame = singleFrame(from: imageBuffer)
             provideSingleFrame?(singleFrame)
             state = .complete
         }
 
         guard state == .writing else { return }
-        let timestamp = CMSampleBufferGetPresentationTimeStamp(buffer).seconds
-
-        if startTimeSeconds == nil { startTimeSeconds = timestamp }
-        guard let startTimeSeconds else {
-            return
-        }
 
         if assetWriterInput.isReadyForMoreMediaData {
             let timestamp = CMSampleBufferGetPresentationTimeStamp(buffer).seconds
+            if startTimeSeconds == nil { startTimeSeconds = timestamp }
+            guard let startTimeSeconds else {
+                return
+            }
             let presentationTime = CMTime(seconds: timestamp - startTimeSeconds, preferredTimescale: 600)
-            guard let rotated = buffer.rotateRightUpMirrored() else { return }
+            guard let imageBuffer = buffer.imageBuffer else { return }
 
             pixelBufferAdaptor.append(
-                rotated,
+                imageBuffer,
                 withPresentationTime: presentationTime
             )
         }

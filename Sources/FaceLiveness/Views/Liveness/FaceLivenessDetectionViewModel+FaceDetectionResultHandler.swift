@@ -28,7 +28,7 @@ extension FaceLivenessDetectionViewModel: FaceDetectionResultHandler {
             }
         case .singleFace(let face):
             var normalizedFace = normalizeFace(face)
-            normalizedFace.boundingBox = normalizedFace.boundingBoxFromLandmarks()
+            normalizedFace.boundingBox = normalizedFace.boundingBoxFromLandmarks(ovalRect: ovalRect)
 
             switch livenessState.state {
             case .pendingFacePreparedConfirmation:
@@ -89,9 +89,7 @@ extension FaceLivenessDetectionViewModel: FaceDetectionResultHandler {
             noFitStartTime = Date()
         }
         if let elapsedTime = noFitStartTime?.timeIntervalSinceNow, abs(elapsedTime) >= noFitTimeoutInterval {
-            self.livenessState
-                .unrecoverableStateEncountered(.timedOut)
-            self.captureSession.stopRunning()
+            handleSessionTimedOut()
         }
     }
     
@@ -100,9 +98,7 @@ extension FaceLivenessDetectionViewModel: FaceDetectionResultHandler {
             noFitStartTime = Date()
         }
         if let elapsedTime = noFitStartTime?.timeIntervalSinceNow, abs(elapsedTime) >= noFitTimeoutInterval {
-            self.livenessState
-                .unrecoverableStateEncountered(.timedOut)
-            self.captureSession.stopRunning()
+            handleSessionTimedOut()
         }
     }
 
@@ -115,7 +111,9 @@ extension FaceLivenessDetectionViewModel: FaceDetectionResultHandler {
             case .match:
                 self.livenessState.faceMatched()
                 self.faceMatchedTimestamp = Date().timestampMilliseconds
-                self.livenessViewControllerDelegate?.displayFreshness(colorSequences: colorSequences)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    self.livenessViewControllerDelegate?.displayFreshness(colorSequences: colorSequences)
+                }
                 let generator = UINotificationFeedbackGenerator()
                 generator.notificationOccurred(.success)
                 self.noFitStartTime = nil
@@ -128,6 +126,15 @@ extension FaceLivenessDetectionViewModel: FaceDetectionResultHandler {
             case .none:
                 self.handleNoFaceDetected()
             }
+        }
+    }
+    
+    private func handleSessionTimedOut() {
+        noFitStartTime = nil
+        DispatchQueue.main.async {
+            self.livenessState
+                .unrecoverableStateEncountered(.timedOut)
+            self.captureSession.stopRunning()
         }
     }
 }
