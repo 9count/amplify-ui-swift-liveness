@@ -58,19 +58,38 @@ public struct FaceLivenessDetectorView: View {
             assetWriterInput: LivenessAVAssetWriterInput()
         )
 
-        let avCpatureDevice = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera],
-            mediaType: .video,
-            position: .front
-        ).devices.first
-
-        let captureSession = LivenessCaptureSession(
-            captureDevice: .init(avCaptureDevice: avCpatureDevice),
-            outputDelegate: OutputSampleBufferCapturer(
-                faceDetector: faceDetector,
-                videoChunker: videoChunker
+        let captureSession: LivenessCaptureSessionProtocol
+        
+        func discoverCaptureDevice(_ deviceType: AVCaptureDevice.DeviceType, position: AVCaptureDevice.Position)  -> AVCaptureDevice? {
+            let discoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: [deviceType],
+                mediaType: .video,
+                position: position
             )
-        )
+            return discoverySession.devices.first
+        }
+        
+        // Might violate SOLID SRP, could do better on this
+        let discoveredTrueDepthDevice = discoverCaptureDevice(.builtInTrueDepthCamera, position: .front)
+        let discoveredWideAngleDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
+        let outputSampleBufferCapturer = OutputSampleBufferCapturer(faceDetector: faceDetector, videoChunker: videoChunker)
+        
+        let avCaptureDevice = discoveredTrueDepthDevice ?? discoveredWideAngleDevice!
+
+        if avCaptureDevice.deviceType == .builtInTrueDepthCamera {
+            outputSampleBufferCapturer.depthDataOutput = AVCaptureDepthDataOutput()
+            outputSampleBufferCapturer.videoDataOutput = AVCaptureVideoDataOutput()
+            
+            captureSession = DepthLivenessCaptureSession(
+                captureDevice: .init(avCaptureDevice: avCaptureDevice),
+                outputDelegate: outputSampleBufferCapturer
+            )
+        } else {
+            captureSession = LivenessCaptureSession(
+                captureDevice: .init(avCaptureDevice: avCaptureDevice),
+                outputDelegate: outputSampleBufferCapturer
+            )
+        }
 
         self._viewModel = StateObject(
             wrappedValue: .init(

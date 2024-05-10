@@ -5,27 +5,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-import UIKit
 import AVFoundation
 
-protocol LivenessCaptureSessionProtocol {
-    func startSession(frame: CGRect) throws -> CALayer
-    func startSession() throws
-    func stopRunning()
-}
-
-class LivenessCaptureSession: LivenessCaptureSessionProtocol {
+class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
     let captureDevice: LivenessCaptureDevice
     private let captureQueue = DispatchQueue(label: "com.amazonaws.faceliveness.cameracapturequeue")
-    private let configurationQueue = DispatchQueue(label: "com.amazonaws.faceliveness.sessionconfiguration", qos: .userInitiated)
-    let outputDelegate: AVCaptureVideoDataOutputSampleBufferDelegate
+    private let configurationQueue = DispatchQueue(label: "com.amazonaws.faceliveness.sessionconfiguration", qos: .userInteractive)
+    let outputDelegate: AVCaptureDataOutputSynchronizerDelegate
+    var outputSynchronizer: AVCaptureDataOutputSynchronizer?
     var captureSession: AVCaptureSession?
     
     var outputSampleBufferCapturer: OutputSampleBufferCapturer? {
         return outputDelegate as? OutputSampleBufferCapturer
     }
 
-    init(captureDevice: LivenessCaptureDevice, outputDelegate: AVCaptureVideoDataOutputSampleBufferDelegate) {
+    init(captureDevice: LivenessCaptureDevice, outputDelegate: AVCaptureDataOutputSynchronizerDelegate) {
         self.captureDevice = captureDevice
         self.outputDelegate = outputDelegate
     }
@@ -50,7 +44,6 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
         else { throw LivenessCaptureSessionError.cameraUnavailable }
 
         let cameraInput = try AVCaptureDeviceInput(device: camera)
-        let videoOutput = AVCaptureVideoDataOutput()
 
         teardownExistingSession(input: cameraInput)
         captureSession = AVCaptureSession()
@@ -59,24 +52,38 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
             throw LivenessCaptureSessionError.captureSessionUnavailable
         }
 
-        try setupInput(cameraInput, for: captureSession)
-        captureSession.sessionPreset = captureDevice.preset
-        try setupOutput(videoOutput, for: captureSession)
-        try captureDevice.configure()
+        captureSession.beginConfiguration()
+        
+        guard let videoDataOutput = outputSampleBufferCapturer?.videoDataOutput as? AVCaptureVideoDataOutput,
+              let depthDataOutput = outputSampleBufferCapturer?.depthDataOutput as? AVCaptureDepthDataOutput else {
+            captureSession.commitConfiguration()
+            return
+        }
+        do {
+            try setupInput(cameraInput, for: captureSession)
+            captureSession.sessionPreset = captureDevice.preset
+            try setupOutput(videoDataOutput, for: captureSession)
+            try setupDepthDataOutput(depthDataOutput, for: captureSession)
+        } catch {
+            captureSession.commitConfiguration()
+            throw LivenessCaptureSessionError.captureSessionUnavailable
+            captureSession.commitConfiguration()
+        }
 
+        outputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoDataOutput, depthDataOutput])
+        outputSynchronizer?.setDelegate(outputDelegate as! AVCaptureDataOutputSynchronizerDelegate, queue: configurationQueue)
+
+        captureSession.commitConfiguration()
+
+        try captureDevice.configure()
+        
         configurationQueue.async {
             captureSession.startRunning()
         }
-
-        videoOutput.setSampleBufferDelegate(
-            outputDelegate,
-            queue: captureQueue
-        )
     }
 
     func stopRunning() {
         guard let session = captureSession else { return }
-
         defer {
             captureSession = nil
         }
@@ -120,14 +127,31 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
             throw LivenessCaptureSessionError.captureSessionOutputUnavailable
         }
         output.videoSettings = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
         ]
-
-        output.connections
-            .filter(\.isVideoOrientationSupported)
-            .forEach {
-                $0.videoOrientation = .portrait
-                $0.isVideoMirrored = true
+        
+        if let connection = output.connection(with: .video) {
+            connection.isEnabled = true
+            connection.isVideoMirrored = true
+            connection.videoOrientation = .portrait        }
+    }
+    
+    private func setupDepthDataOutput(
+        _ output: AVCaptureDepthDataOutput,
+        for captureSession: AVCaptureSession
+    ) throws {
+        if captureSession.canAddOutput(output) {
+            captureSession.addOutput(output)
+            output.isFilteringEnabled = true
+            if let connection = output.connection(with: .depthData) {
+                connection.isEnabled = true
+                connection.isVideoMirrored = true
+                connection.videoOrientation = .portrait
+            } else {
+                throw LivenessCaptureSessionError.cameraUnavailable
+            }
+        } else {
+            throw LivenessCaptureSessionError.captureSessionOutputUnavailable
         }
     }
 

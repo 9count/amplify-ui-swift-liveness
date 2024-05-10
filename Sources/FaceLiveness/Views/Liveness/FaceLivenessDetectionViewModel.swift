@@ -20,7 +20,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     @Published var livenessState: LivenessStateMachine
 
     weak var livenessViewControllerDelegate: FaceLivenessViewControllerPresenter?
-    let captureSession: LivenessCaptureSession
+    let captureSession: LivenessCaptureSessionProtocol
     var closeButtonAction: () -> Void
     let videoChunker: VideoChunker
     let sessionID: String
@@ -53,7 +53,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     init(
         faceDetector: FaceDetector,
         faceInOvalMatching: FaceInOvalMatching,
-        captureSession: LivenessCaptureSession,
+        captureSession: LivenessCaptureSessionProtocol,
         videoChunker: VideoChunker,
         stateMachine: LivenessStateMachine = .init(state: .initial),
         closeButtonAction: @escaping () -> Void,
