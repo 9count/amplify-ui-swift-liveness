@@ -21,13 +21,16 @@ let package = Package(
             dependencies: [
                 .product(name: "AWSPluginsCore", package: "amplify-swift"),
                 .product(name: "AWSCognitoAuthPlugin", package: "amplify-swift"),
-                .product(name: "AWSPredictionsPlugin", package: "amplify-swift")
+                .product(name: "AWSPredictionsPlugin", package: "amplify-swift"),
+                "HistogramCalculator"
             ],
             resources: [
                 .process("Resources/Base.lproj"),
-                .copy("Resources/face_detection_short_range.mlmodelc")
+                .copy("Resources/face_detection_short_range.mlmodelc"),
+                .copy("Utilities/DepthToJET/Metal/")
             ]
         ),
+        .target(name: "HistogramCalculator"),
         .testTarget(
             name: "FaceLivenessTests",
             dependencies: ["FaceLiveness"]),
