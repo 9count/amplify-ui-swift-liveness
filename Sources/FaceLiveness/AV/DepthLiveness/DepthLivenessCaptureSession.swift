@@ -14,9 +14,14 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
     let outputDelegate: AVCaptureDataOutputSynchronizerDelegate
     var outputSynchronizer: AVCaptureDataOutputSynchronizer?
     var captureSession: AVCaptureSession?
+    var photoOutput: AVCapturePhotoOutput?
     
     var outputSampleBufferCapturer: OutputSampleBufferCapturer? {
         return outputDelegate as? OutputSampleBufferCapturer
+    }
+    
+    var outputPhotoCapturer: AVCapturePhotoCaptureDelegate? {
+        return outputDelegate as? AVCapturePhotoCaptureDelegate
     }
 
     init(captureDevice: LivenessCaptureDevice, outputDelegate: AVCaptureDataOutputSynchronizerDelegate) {
@@ -43,8 +48,8 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
         guard let camera = captureDevice.avCaptureDevice
         else { throw LivenessCaptureSessionError.cameraUnavailable }
 
-        let cameraInput = try AVCaptureDeviceInput(device: camera)
 
+        let cameraInput = try AVCaptureDeviceInput(device: camera)
         teardownExistingSession(input: cameraInput)
         captureSession = AVCaptureSession()
 
@@ -64,6 +69,8 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
             captureSession.sessionPreset = captureDevice.preset
             try setupOutput(videoDataOutput, for: captureSession)
             try setupDepthDataOutput(depthDataOutput, for: captureSession)
+            try setupPhotoCaptureOutput(AVCapturePhotoOutput(), for: captureSession)
+            try setupHighestResolution(for: camera)
         } catch {
             captureSession.commitConfiguration()
             throw LivenessCaptureSessionError.captureSessionUnavailable
@@ -133,7 +140,8 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
         if let connection = output.connection(with: .video) {
             connection.isEnabled = true
             connection.isVideoMirrored = true
-            connection.videoOrientation = .portrait        }
+            connection.videoOrientation = .portrait
+        }
     }
     
     private func setupDepthDataOutput(
@@ -142,16 +150,30 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
     ) throws {
         if captureSession.canAddOutput(output) {
             captureSession.addOutput(output)
-            output.isFilteringEnabled = true
+            output.isFilteringEnabled = false
             if let connection = output.connection(with: .depthData) {
                 connection.isEnabled = true
-                connection.isVideoMirrored = true
-                connection.videoOrientation = .portrait
             } else {
                 throw LivenessCaptureSessionError.cameraUnavailable
             }
         } else {
             throw LivenessCaptureSessionError.captureSessionOutputUnavailable
+        }
+    }
+    
+    private func setupPhotoCaptureOutput(
+        _ output: AVCapturePhotoOutput,
+        for captureSession: AVCaptureSession
+    ) throws {
+        if captureSession.canAddOutput(output) {
+            captureSession.addOutput(output)
+            self.photoOutput = output
+            output.isDepthDataDeliveryEnabled = output.isDepthDataDeliverySupported
+        }
+        
+        if let connection = output.connection(with: AVMediaType.video) {
+            connection.videoOrientation = .portrait
+            connection.isVideoMirrored = true
         }
     }
 
@@ -164,5 +186,69 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
         previewLayer.connection?.videoOrientation = .portrait
         previewLayer.frame = frame
         return previewLayer
+    }
+    
+    func capturePhoto() {
+        guard 
+            let photoOutput = self.photoOutput,
+            let delegate = outputPhotoCapturer
+        else { return }
+        let photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+        photoSettings.isDepthDataDeliveryEnabled = photoOutput.isDepthDataDeliverySupported
+        photoOutput.capturePhoto(with: photoSettings, delegate: delegate)
+    }
+    
+    private func setupHighestResolution(for device: AVCaptureDevice) throws {
+        let depthFormats = device.activeFormat.supportedDepthDataFormats
+        let filtered = depthFormats.filter({
+            CMFormatDescriptionGetMediaSubType($0.formatDescription) == kCVPixelFormatType_DepthFloat16
+        })
+        let selectedFormat = filtered.max(by: {
+            first, second in CMVideoFormatDescriptionGetDimensions(first.formatDescription).width < CMVideoFormatDescriptionGetDimensions(second.formatDescription).width
+        })
+        
+        do {
+            try device.lockForConfiguration()
+            device.activeDepthDataFormat = selectedFormat
+            device.unlockForConfiguration()
+        } catch {
+            throw LivenessCaptureSessionError.cameraUnavailable
+        }
+    }
+    
+    /**
+     Finds the highest resolution AVCaptureDevice.Format with a 420YpCbCr8BiPlanarFullRange pixel format for the given AVCaptureDevice.
+
+     - Parameters:
+        - device: The AVCaptureDevice for which to find the highest resolution format.
+
+     - Returns: A CGSize representing the highest resolution found with the specified pixel format, or nil if no format with the specified pixel format is available.
+
+     - Note: This function iterates through the formats supported by the AVCaptureDevice and selects the one with the highest resolution that matches the specified pixel format (420YpCbCr8BiPlanarFullRange). If such a format is found, its dimensions are converted into a CGSize and returned. If no suitable format is found, nil is returned.
+     */
+    /// - Tag: ConfigureDeviceResolution
+    fileprivate func highestResolution420Format(for device: AVCaptureDevice) -> CGSize? {
+        var highestResolutionFormat: AVCaptureDevice.Format? = nil
+        var highestResolutionDimensions = CMVideoDimensions(width: 0, height: 0)
+        
+        for format in device.formats {
+            let deviceFormat = format as AVCaptureDevice.Format
+            
+            let deviceFormatDescription = deviceFormat.formatDescription
+            if CMFormatDescriptionGetMediaSubType(deviceFormatDescription) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange {
+                let candidateDimensions = CMVideoFormatDescriptionGetDimensions(deviceFormatDescription)
+                if (highestResolutionFormat == nil) || (candidateDimensions.width > highestResolutionDimensions.width) {
+                    highestResolutionFormat = deviceFormat
+                    highestResolutionDimensions = candidateDimensions
+                }
+            }
+        }
+        
+        if highestResolutionFormat != nil {
+            let resolution = CGSize(width: CGFloat(highestResolutionDimensions.width), height: CGFloat(highestResolutionDimensions.height))
+            return resolution
+        }
+        
+        return nil
     }
 }

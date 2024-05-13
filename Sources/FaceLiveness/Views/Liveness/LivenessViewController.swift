@@ -136,6 +136,7 @@ extension _LivenessViewController: FaceLivenessViewControllerPresenter {
             },
             onComplete: { [weak self] in
                 guard let self else { return }
+                self.viewModel.capturePhoto()
                 self.freshnessView.removeFromSuperview()
 
                 self.viewModel.handleFreshnessComplete(

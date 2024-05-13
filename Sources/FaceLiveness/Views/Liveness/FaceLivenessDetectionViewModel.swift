@@ -358,4 +358,8 @@ class FaceLivenessDetectionViewModel: ObservableObject {
         }
         return data
     }
+    
+    func capturePhoto() {
+        captureSession.capturePhoto()
+    }
 }

@@ -27,7 +27,7 @@ let package = Package(
             resources: [
                 .process("Resources/Base.lproj"),
                 .copy("Resources/face_detection_short_range.mlmodelc"),
-                .copy("Utilities/DepthToJET/Metal/")
+                .copy("Utilities/DepthToJET/Metal")
             ]
         ),
         .target(name: "HistogramCalculator"),

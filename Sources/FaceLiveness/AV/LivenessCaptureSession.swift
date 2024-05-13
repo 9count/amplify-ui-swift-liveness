@@ -12,6 +12,7 @@ protocol LivenessCaptureSessionProtocol {
     func startSession(frame: CGRect) throws -> CALayer
     func startSession() throws
     func stopRunning()
+    func capturePhoto()
 }
 
 class LivenessCaptureSession: LivenessCaptureSessionProtocol {
@@ -140,5 +141,9 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
         previewLayer.connection?.videoOrientation = .portrait
         previewLayer.frame = frame
         return previewLayer
+    }
+    
+    func capturePhoto() {
+        return
     }
 }
