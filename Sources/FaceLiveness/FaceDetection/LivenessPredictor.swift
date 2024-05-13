@@ -34,9 +34,9 @@ public class LivenessPredictor {
         return imageClassifierVisionModel
     }
     
-    public enum Liveness: String {
-        case real = "Real"
-        case fake = "Fake"
+    public enum Liveness {
+        case real(confidence: VNConfidence)
+        case fake(conifdence: VNConfidence)
     }
     
     public typealias LivenessPredictionHandler = (_ liveness: Liveness) -> Void
@@ -100,10 +100,8 @@ public class LivenessPredictor {
             return
         }
         
-        guard let liveness = Liveness(rawValue: result.identifier) else {
-            return
-        }
-        
-        predictionHandler(liveness)
+        predictionHandler(result.identifier == "Real" 
+              ? .real(confidence: result.confidence)
+              : .fake(conifdence: result.confidence))
     }
 }

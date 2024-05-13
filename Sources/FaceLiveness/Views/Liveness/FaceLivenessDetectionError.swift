@@ -121,6 +121,12 @@ public struct FaceLivenessDetectionError: Error, Equatable {
         message: "Service-wide throttling to recover from an operational event or service is not able to scale.",
         recoverySuggestion: ""
     )
+    
+    public static let visionPredictionError = FaceLivenessDetectionError(
+        code: 17,
+        message: "model prediction error",
+        recoverySuggestion: ""
+    )
 
     public static func == (lhs: FaceLivenessDetectionError, rhs: FaceLivenessDetectionError) -> Bool {
         lhs.code == rhs.code

@@ -41,6 +41,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     var initialClientEvent: InitialClientEvent?
     var faceMatchedTimestamp: UInt64?
     var noFitStartTime: Date?
+    var depthData: DepthLivenessDataModel?
     
     var noFitTimeoutInterval: TimeInterval {
         if let sessionTimeoutMilliSec = sessionConfiguration?.ovalMatchChallenge.oval.ovalFitTimeout {

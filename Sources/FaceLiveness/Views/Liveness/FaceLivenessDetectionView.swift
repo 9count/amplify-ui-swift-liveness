@@ -18,11 +18,12 @@ public struct FaceLivenessDetectorView: View {
     @Binding var isPresented: Bool
     @State var displayState: DisplayState = .awaitingCameraPermission
     @State var displayingCameraPermissionsNeededAlert = false
-
     let disableStartView: Bool
-    let onCompletion: (Result<Void, FaceLivenessDetectionError>) -> Void
 
     let sessionTask: Task<FaceLivenessSession, Error>
+
+    public typealias CompletionHandler = (Result<DepthLivenessDataModel?, FaceLivenessDetectionError>) -> Void
+    let onCompletion: CompletionHandler
 
     public init(
         sessionID: String,
@@ -30,7 +31,7 @@ public struct FaceLivenessDetectorView: View {
         region: String,
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
-        onCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void
+        onCompletion: @escaping CompletionHandler
     ) {
         self.disableStartView = disableStartView
         self._isPresented = isPresented
@@ -42,8 +43,8 @@ public struct FaceLivenessDetectorView: View {
                 credentialsProvider: credentialsProvider,
                 region: region,
                 options: .init(),
-                completion: map(detectionCompletion: onCompletion)
-            )
+                completion: map(detectionCompletion: onCompletion))
+
             return session
         }
 
@@ -79,7 +80,7 @@ public struct FaceLivenessDetectorView: View {
         if avCaptureDevice.deviceType == .builtInTrueDepthCamera {
             outputSampleBufferCapturer.depthDataOutput = AVCaptureDepthDataOutput()
             outputSampleBufferCapturer.videoDataOutput = AVCaptureVideoDataOutput()
-            
+
             captureSession = DepthLivenessCaptureSession(
                 captureDevice: .init(avCaptureDevice: avCaptureDevice),
                 outputDelegate: outputSampleBufferCapturer
@@ -101,6 +102,18 @@ public struct FaceLivenessDetectorView: View {
                 sessionID: sessionID
             )
         )
+        
+        if avCaptureDevice.deviceType == .builtInTrueDepthCamera {
+            outputSampleBufferCapturer.depthLivenessCompletionHandler = { [self] result in
+                switch result {
+                case .success(let depthData):
+                    print("inside view closure", depthData)
+                    viewModel.depthData = depthData
+                case .failure(let error):
+                    print(error.localizedDescription)
+                }
+            }
+        }
     }
     
     init(
@@ -109,7 +122,7 @@ public struct FaceLivenessDetectorView: View {
         region: String,
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
-        onCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void,
+        onCompletion: @escaping CompletionHandler,
         captureSession: LivenessCaptureSession
     ) {
         self.disableStartView = disableStartView
@@ -198,7 +211,7 @@ public struct FaceLivenessDetectorView: View {
                 switch output.state {
                 case .completed:
                     isPresented = false
-                    onCompletion(.success(()))
+                    onCompletion(.success(viewModel.depthData))
                 case .encounteredUnrecoverableError(let error):
                     let closeCode = error.webSocketCloseCode ?? .normalClosure
                     viewModel.livenessService?.closeSocket(with: closeCode)
@@ -271,11 +284,11 @@ enum InstructionState {
     case display(text: String)
 }
 
-private func map(detectionCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void) -> ((Result<Void, FaceLivenessSessionError>) -> Void) {
+private func `map`(detectionCompletion: @escaping (Result<DepthLivenessDataModel?, FaceLivenessDetectionError>) -> Void) -> ((Result<Void, FaceLivenessSessionError>) -> Void) {
     { result in
         switch result {
         case .success:
-            detectionCompletion(.success(()))
+            detectionCompletion(.success(nil))
         case .failure(.invalidRegion):
             detectionCompletion(.failure(.invalidRegion))
         case .failure(.accessDenied):

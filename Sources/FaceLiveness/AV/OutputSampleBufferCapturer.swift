@@ -16,12 +16,21 @@ class OutputSampleBufferCapturer: NSObject {
     // Violates SOLID
     var depthDataOutput: AVCaptureOutput?
     var videoDataOutput: AVCaptureOutput?
+    
+    typealias DepthLivenessCompletionHandler = (Result<DepthLivenessDataModel?, Error>) -> Void
+    var depthLivenessCompletionHandler: DepthLivenessCompletionHandler?
+    
     private let videoDepthConverter = DepthToJETConverter()
     private let livenessPredictor = LivenessPredictor()
     
-    init(faceDetector: FaceDetector, videoChunker: VideoChunker) {
+    init(
+        faceDetector: FaceDetector,
+        videoChunker: VideoChunker,
+        depthLivenessCompletionHandler: DepthLivenessCompletionHandler? = nil
+    ) {
         self.faceDetector = faceDetector
         self.videoChunker = videoChunker
+        self.depthLivenessCompletionHandler = depthLivenessCompletionHandler
     }
     
     private func consumeAndDetectFace(from sampleBuffer: CMSampleBuffer) {
@@ -90,11 +99,12 @@ extension OutputSampleBufferCapturer: AVCapturePhotoCaptureDelegate {
         
         guard let uiImage = UIImage(pixelBuffer: jetPixelBuffer) else { return }
         do {
-            try self.livenessPredictor.makePrediction(for: uiImage, completionHandler: { liveness in
-                print(liveness.rawValue)
+            try self.livenessPredictor.makePrediction(for: uiImage, completionHandler: { result in
+                let dataModel = DepthLivenessDataModel(liveness: result, depthUIImage: uiImage)
+                self.depthLivenessCompletionHandler?(.success(dataModel))
             })
         } catch {
-            print("Fail predicting")
+            self.depthLivenessCompletionHandler?(.failure(FaceLivenessDetectionError.visionPredictionError))
         }
     }
     

@@ -6,6 +6,12 @@
 //
 
 import AVFoundation
+import UIKit
+
+public struct DepthLivenessDataModel {
+    var liveness: LivenessPredictor.Liveness
+    var depthUIImage: UIImage
+}
 
 class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
     let captureDevice: LivenessCaptureDevice
@@ -24,7 +30,10 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
         return outputDelegate as? AVCapturePhotoCaptureDelegate
     }
 
-    init(captureDevice: LivenessCaptureDevice, outputDelegate: AVCaptureDataOutputSynchronizerDelegate) {
+    init(
+        captureDevice: LivenessCaptureDevice,
+        outputDelegate: AVCaptureDataOutputSynchronizerDelegate
+    ) {
         self.captureDevice = captureDevice
         self.outputDelegate = outputDelegate
     }
