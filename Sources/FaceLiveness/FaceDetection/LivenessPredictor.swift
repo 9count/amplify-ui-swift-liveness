@@ -36,7 +36,7 @@ public class LivenessPredictor {
     
     public enum Liveness {
         case real(confidence: VNConfidence)
-        case fake(conifdence: VNConfidence)
+        case fake(confidence: VNConfidence)
     }
     
     public typealias LivenessPredictionHandler = (_ liveness: Liveness) -> Void
@@ -102,6 +102,6 @@ public class LivenessPredictor {
         
         predictionHandler(result.identifier == "Real" 
               ? .real(confidence: result.confidence)
-              : .fake(conifdence: result.confidence))
+              : .fake(confidence: result.confidence))
     }
 }
