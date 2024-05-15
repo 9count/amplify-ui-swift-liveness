@@ -34,7 +34,7 @@ public struct FaceLivenessDetectorView: View {
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
         onCompletion: @escaping CompletionHandler,
-        visionPredictCompletion: @escaping VisionPredictCompletionHandler
+        visionPredictCompletion: VisionPredictCompletionHandler? = nil
     ) {
         self.disableStartView = disableStartView
         self._isPresented = isPresented
@@ -110,9 +110,9 @@ public struct FaceLivenessDetectorView: View {
             outputSampleBufferCapturer.depthLivenessCompletionHandler = { [self] result in
                 switch result {
                 case .success(let depthData):
-                    visionPredictCompletion(.success(depthData))
+                    visionPredictCompletion?(.success(depthData))
                 case .failure(let error):
-                    visionPredictCompletion(.failure(.visionPredictionError))
+                    visionPredictCompletion?(.failure(.visionPredictionError))
                 }
             }
         }
