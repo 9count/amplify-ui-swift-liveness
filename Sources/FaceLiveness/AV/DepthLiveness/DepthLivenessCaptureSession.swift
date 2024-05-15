@@ -9,8 +9,8 @@ import AVFoundation
 import UIKit
 
 public struct DepthLivenessDataModel {
-    var liveness: LivenessPredictor.Liveness
-    var depthUIImage: UIImage
+    public var liveness: LivenessPredictor.Liveness
+    public var depthUIImage: UIImage
 }
 
 class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
