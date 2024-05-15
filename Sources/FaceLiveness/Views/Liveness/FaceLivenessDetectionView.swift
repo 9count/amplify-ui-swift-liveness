@@ -22,8 +22,10 @@ public struct FaceLivenessDetectorView: View {
 
     let sessionTask: Task<FaceLivenessSession, Error>
 
-    public typealias CompletionHandler = (Result<DepthLivenessDataModel?, FaceLivenessDetectionError>) -> Void
+    public typealias CompletionHandler = (Result<Void, FaceLivenessDetectionError>) -> Void
+    public typealias VisionPredictCompletionHandler = (Result<DepthLivenessDataModel?, FaceLivenessDetectionError>) -> Void
     let onCompletion: CompletionHandler
+    var visionPredictCompletion: VisionPredictCompletionHandler?
 
     public init(
         sessionID: String,
@@ -31,12 +33,13 @@ public struct FaceLivenessDetectorView: View {
         region: String,
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
-        onCompletion: @escaping CompletionHandler
+        onCompletion: @escaping CompletionHandler,
+        visionPredictCompletion: @escaping VisionPredictCompletionHandler
     ) {
         self.disableStartView = disableStartView
         self._isPresented = isPresented
         self.onCompletion = onCompletion
-
+        self.visionPredictCompletion
         self.sessionTask = Task {
             let session = try await AWSPredictionsPlugin.startFaceLivenessSession(
                 withID: sessionID,
@@ -107,10 +110,9 @@ public struct FaceLivenessDetectorView: View {
             outputSampleBufferCapturer.depthLivenessCompletionHandler = { [self] result in
                 switch result {
                 case .success(let depthData):
-                    print("inside view closure", depthData)
-                    viewModel.depthData = depthData
+                    visionPredictCompletion(.success(depthData))
                 case .failure(let error):
-                    print(error.localizedDescription)
+                    visionPredictCompletion(.failure(.visionPredictionError))
                 }
             }
         }
@@ -211,7 +213,7 @@ public struct FaceLivenessDetectorView: View {
                 switch output.state {
                 case .completed:
                     isPresented = false
-                    onCompletion(.success(viewModel.depthData))
+                    onCompletion(.success(()))
                 case .encounteredUnrecoverableError(let error):
                     let closeCode = error.webSocketCloseCode ?? .normalClosure
                     viewModel.livenessService?.closeSocket(with: closeCode)
@@ -284,11 +286,11 @@ enum InstructionState {
     case display(text: String)
 }
 
-private func `map`(detectionCompletion: @escaping (Result<DepthLivenessDataModel?, FaceLivenessDetectionError>) -> Void) -> ((Result<Void, FaceLivenessSessionError>) -> Void) {
+private func `map`(detectionCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void) -> ((Result<Void, FaceLivenessSessionError>) -> Void) {
     { result in
         switch result {
         case .success:
-            detectionCompletion(.success(nil))
+            detectionCompletion(.success(()))
         case .failure(.invalidRegion):
             detectionCompletion(.failure(.invalidRegion))
         case .failure(.accessDenied):

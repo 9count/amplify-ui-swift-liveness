@@ -41,7 +41,6 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     var initialClientEvent: InitialClientEvent?
     var faceMatchedTimestamp: UInt64?
     var noFitStartTime: Date?
-    var depthData: DepthLivenessDataModel?
     
     var noFitTimeoutInterval: TimeInterval {
         if let sessionTimeoutMilliSec = sessionConfiguration?.ovalMatchChallenge.oval.ovalFitTimeout {
@@ -307,6 +306,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
             self.livenessState.completedDisplayingFreshness()
             self.faceGuideRect = faceGuide
         }
+        capturePhoto()
     }
 
     func sendVideoEvent(data: Data, videoEventTime: UInt64) {
