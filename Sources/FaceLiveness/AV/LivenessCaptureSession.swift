@@ -9,8 +9,8 @@ import UIKit
 import AVFoundation
 
 protocol LivenessCaptureSessionProtocol {
-    func startSession(frame: CGRect) throws -> CALayer
-    func startSession() throws
+    func configureCamera(frame: CGRect) throws -> CALayer
+    func startSession()
     func stopRunning()
     func capturePhoto()
 }
@@ -33,7 +33,6 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
 
     func configureCamera(frame: CGRect) throws -> CALayer {
         try configureCamera()
-
         guard let captureSession = captureSession else {
             throw LivenessCaptureSessionError.captureSessionUnavailable
         }

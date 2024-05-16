@@ -38,8 +38,8 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
         self.outputDelegate = outputDelegate
     }
 
-    func startSession(frame: CGRect) throws -> CALayer {
-        try startSession()
+    func configureCamera(frame: CGRect) throws -> CALayer {
+        try configureCamera()
 
         guard let captureSession = captureSession else {
             throw LivenessCaptureSessionError.captureSessionUnavailable
@@ -53,7 +53,7 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
         return previewLayer
     }
     
-    func startSession() throws {
+    func configureCamera() throws {
         guard let camera = captureDevice.avCaptureDevice
         else { throw LivenessCaptureSessionError.cameraUnavailable }
 
@@ -83,7 +83,6 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
         } catch {
             captureSession.commitConfiguration()
             throw LivenessCaptureSessionError.captureSessionUnavailable
-            captureSession.commitConfiguration()
         }
 
         outputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoDataOutput, depthDataOutput])
@@ -93,8 +92,12 @@ class DepthLivenessCaptureSession: LivenessCaptureSessionProtocol {
 
         try captureDevice.configure()
         
+    }
+    
+    func startSession() {
+        guard let session = captureSession else { return }
         configurationQueue.async {
-            captureSession.startRunning()
+            session.startRunning()
         }
     }
 
