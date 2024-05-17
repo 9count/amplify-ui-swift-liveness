@@ -8,7 +8,6 @@
 import AVFoundation
 import CoreImage
 import UIKit
-import PhotosUI
 
 class OutputSampleBufferCapturer: NSObject {
     let faceDetector: FaceDetector
@@ -91,12 +90,6 @@ extension OutputSampleBufferCapturer: AVCapturePhotoCaptureDelegate {
             return
         }
         
-        #if DEBUG
-            Task {
-                await save(from: jetPixelBuffer)
-            }
-        #endif
-        
         guard let uiImage = UIImage(pixelBuffer: jetPixelBuffer) else { return }
         do {
             try self.livenessPredictor.makePrediction(for: uiImage, completionHandler: { result in
@@ -118,40 +111,5 @@ extension OutputSampleBufferCapturer: AVCapturePhotoCaptureDelegate {
         }
         
         return videoDepthConverter.render(pixelBuffer: depthPixelBuffer)
-    }
-    
-    var isPhotoLibraryReadWriteAccessGranted: Bool {
-        get async {
-            let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-            var isAuthorized = status == .authorized
-            
-            if status == .notDetermined {
-                isAuthorized = await PHPhotoLibrary.requestAuthorization(for: .readWrite) == .authorized
-            }
-            
-            return isAuthorized
-        }
-    }
-    
-    func save(from cvPixelBuffer: CVPixelBuffer) async {
-        // Confirm the user granted read/write access.
-        guard await isPhotoLibraryReadWriteAccessGranted else { return }
-        guard let cgImage = CGImage.convert(from: cvPixelBuffer) else {
-            return
-        }
-        
-        // Create a data representation of the photo and its attachments.
-        if let photoData = UIImage(cgImage: cgImage).pngData() {
-            PHPhotoLibrary.shared().performChanges {
-                // Save the photo data.
-                let creationRequest = PHAssetCreationRequest.forAsset()
-                creationRequest.addResource(with: .photo, data: photoData, options: nil)
-            } completionHandler: { success, error in
-                if let error {
-                    print("Error saving photo: \(error.localizedDescription)")
-                    return
-                }
-            }
-        }
     }
 }
