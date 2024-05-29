@@ -23,7 +23,7 @@ public class LivenessPredictor {
     private static func createImageClassifier() -> VNCoreMLModel {
         let defaultConfig = MLModelConfiguration()
         
-        guard let imageClassifierWrapper = try? HumanClassifierV1(configuration: defaultConfig) else {
+        guard let imageClassifierWrapper = try? LivenessClassifierV1(configuration: defaultConfig) else {
             fatalError("App failed to create an image classifier model instance.")
         }
         
