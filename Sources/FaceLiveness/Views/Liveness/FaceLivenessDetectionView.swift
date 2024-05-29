@@ -33,6 +33,7 @@ public struct FaceLivenessDetectorView: View {
         region: String,
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
+        depthCameraSupported: Bool = false,
         onCompletion: @escaping CompletionHandler,
         visionPredictCompletion: VisionPredictCompletionHandler? = nil
     ) {
@@ -74,13 +75,13 @@ public struct FaceLivenessDetectorView: View {
         }
         
         // Might violate SOLID SRP, could do better on this
-        let discoveredTrueDepthDevice = discoverCaptureDevice(.builtInTrueDepthCamera, position: .front)
-        let discoveredWideAngleDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
+//        let discoveredTrueDepthDevice = discoverCaptureDevice(.builtInTrueDepthCamera, position: .front)
+//        let discoveredWideAngleDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
         let outputSampleBufferCapturer = OutputSampleBufferCapturer(faceDetector: faceDetector, videoChunker: videoChunker)
         
-        let avCaptureDevice = discoveredTrueDepthDevice ?? discoveredWideAngleDevice!
-
-        if avCaptureDevice.deviceType == .builtInTrueDepthCamera {
+        let avCaptureDevice = discoverCaptureDevice(.builtInTrueDepthCamera, position: .front)
+        // workaround for checking if a device supports true depth camera
+        if depthCameraSupported {
             outputSampleBufferCapturer.depthDataOutput = AVCaptureDepthDataOutput()
             outputSampleBufferCapturer.videoDataOutput = AVCaptureVideoDataOutput()
 
@@ -106,7 +107,7 @@ public struct FaceLivenessDetectorView: View {
             )
         )
         
-        if avCaptureDevice.deviceType == .builtInTrueDepthCamera {
+        if depthCameraSupported {
             outputSampleBufferCapturer.depthLivenessCompletionHandler = { [self] result in
                 switch result {
                 case .success(let depthData):

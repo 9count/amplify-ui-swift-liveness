@@ -46,8 +46,19 @@ final class VideoChunker {
 
         // explicitly calling `endSession` is unnecessary
         if state != .complete && !finishedWriting {
+            if assetWriter.status == .writing {
+                for input in assetWriter.inputs {
+                    input.markAsFinished()
+                }
+            }
             assetWriter.finishWriting { [weak self] in
-                self?.finishedWriting = true
+                DispatchQueue.main.async {
+                    if self?.assetWriter.status == .completed {
+                        self?.finishedWriting = true
+                    } else {
+                        debugPrint("asset writer status error : \(self?.assetWriter.error?.localizedDescription)")
+                    }
+                }
             }
         }
     }
