@@ -75,13 +75,14 @@ public struct FaceLivenessDetectorView: View {
         }
         
         // Might violate SOLID SRP, could do better on this
-//        let discoveredTrueDepthDevice = discoverCaptureDevice(.builtInTrueDepthCamera, position: .front)
-//        let discoveredWideAngleDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
+        let discoveredTrueDepthDevice = discoverCaptureDevice(.builtInTrueDepthCamera, position: .front)
+        let discoveredWideAngleDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
         let outputSampleBufferCapturer = OutputSampleBufferCapturer(faceDetector: faceDetector, videoChunker: videoChunker)
         
-        let avCaptureDevice = discoverCaptureDevice(depthCameraSupported ? .builtInTrueDepthCamera : .builtInWideAngleCamera, position: .front)
+        let depthCaptureSessionEnabled = depthCameraSupported && discoveredTrueDepthDevice != nil
+        let avCaptureDevice = depthCaptureSessionEnabled ? discoveredTrueDepthDevice : discoveredWideAngleDevice
         // workaround for checking if a device supports true depth camera
-        if depthCameraSupported {
+        if depthCaptureSessionEnabled {
             outputSampleBufferCapturer.depthDataOutput = AVCaptureDepthDataOutput()
             outputSampleBufferCapturer.videoDataOutput = AVCaptureVideoDataOutput()
 
@@ -107,7 +108,7 @@ public struct FaceLivenessDetectorView: View {
             )
         )
         
-        if depthCameraSupported {
+        if depthCaptureSessionEnabled {
             outputSampleBufferCapturer.depthLivenessCompletionHandler = { [self] result in
                 switch result {
                 case .success(let depthData):
