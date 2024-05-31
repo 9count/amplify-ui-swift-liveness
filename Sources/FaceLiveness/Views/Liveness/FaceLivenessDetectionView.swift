@@ -79,7 +79,7 @@ public struct FaceLivenessDetectorView: View {
 //        let discoveredWideAngleDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
         let outputSampleBufferCapturer = OutputSampleBufferCapturer(faceDetector: faceDetector, videoChunker: videoChunker)
         
-        let avCaptureDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
+        let avCaptureDevice = discoverCaptureDevice(depthCameraSupported ? .builtInTrueDepthCamera : .builtInWideAngleCamera, position: .front)
         // workaround for checking if a device supports true depth camera
         if depthCameraSupported {
             outputSampleBufferCapturer.depthDataOutput = AVCaptureDepthDataOutput()
