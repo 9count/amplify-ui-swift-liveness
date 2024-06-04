@@ -8,7 +8,14 @@
 import UIKit
 import AVFoundation
 
-class LivenessCaptureSession {
+protocol LivenessCaptureSessionProtocol {
+    func configureCamera(frame: CGRect) throws -> CALayer
+    func startSession()
+    func stopRunning()
+    func capturePhoto()
+}
+
+class LivenessCaptureSession: LivenessCaptureSessionProtocol {
     let captureDevice: LivenessCaptureDevice
     private let captureQueue = DispatchQueue(label: "com.amazonaws.faceliveness.cameracapturequeue")
     private let configurationQueue = DispatchQueue(label: "com.amazonaws.faceliveness.sessionconfiguration", qos: .userInteractive)
@@ -26,7 +33,6 @@ class LivenessCaptureSession {
 
     func configureCamera(frame: CGRect) throws -> CALayer {
         try configureCamera()
-
         guard let captureSession = captureSession else {
             throw LivenessCaptureSessionError.captureSessionUnavailable
         }
@@ -136,5 +142,9 @@ class LivenessCaptureSession {
         previewLayer.connection?.videoOrientation = .portrait
         previewLayer.frame = frame
         return previewLayer
+    }
+    
+    func capturePhoto() {
+        return
     }
 }

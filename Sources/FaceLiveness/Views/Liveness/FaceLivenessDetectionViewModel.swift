@@ -20,7 +20,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     @Published var livenessState: LivenessStateMachine
 
     weak var livenessViewControllerDelegate: FaceLivenessViewControllerPresenter?
-    let captureSession: LivenessCaptureSession
+    let captureSession: LivenessCaptureSessionProtocol
     var closeButtonAction: () -> Void
     let videoChunker: VideoChunker
     let sessionID: String
@@ -41,6 +41,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     var initialClientEvent: InitialClientEvent?
     var faceMatchedTimestamp: UInt64?
     var noFitStartTime: Date?
+    var depthDataUploaded = false
     
     var noFitTimeoutInterval: TimeInterval {
         if let sessionTimeoutMilliSec = sessionConfiguration?.ovalMatchChallenge.oval.ovalFitTimeout {
@@ -53,7 +54,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     init(
         faceDetector: FaceDetector,
         faceInOvalMatching: FaceInOvalMatching,
-        captureSession: LivenessCaptureSession,
+        captureSession: LivenessCaptureSessionProtocol,
         videoChunker: VideoChunker,
         stateMachine: LivenessStateMachine = .init(state: .initial),
         closeButtonAction: @escaping () -> Void,
@@ -205,6 +206,10 @@ class FaceLivenessDetectionViewModel: ObservableObject {
                 .freshness(event: freshnessEvent),
                 eventDate: { .init() }
             )
+            if !depthDataUploaded {
+                capturePhoto()
+                depthDataUploaded.toggle()
+            }
         } catch {
             DispatchQueue.main.async {
                 self.livenessState.unrecoverableStateEncountered(.unknown)
@@ -309,6 +314,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
             self.livenessState.completedDisplayingFreshness()
             self.faceGuideRect = faceGuide
         }
+//        capturePhoto()
     }
 
     func sendVideoEvent(data: Data, videoEventTime: UInt64) {
@@ -360,5 +366,9 @@ class FaceLivenessDetectionViewModel: ObservableObject {
             hasSentFirstVideo = true
         }
         return data
+    }
+    
+    func capturePhoto() {
+        captureSession.capturePhoto()
     }
 }

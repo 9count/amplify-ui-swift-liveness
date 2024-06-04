@@ -18,11 +18,14 @@ public struct FaceLivenessDetectorView: View {
     @Binding var isPresented: Bool
     @State var displayState: DisplayState = .awaitingCameraPermission
     @State var displayingCameraPermissionsNeededAlert = false
-
     let disableStartView: Bool
-    let onCompletion: (Result<Void, FaceLivenessDetectionError>) -> Void
 
     let sessionTask: Task<FaceLivenessSession, Error>
+
+    public typealias CompletionHandler = (Result<Void, FaceLivenessDetectionError>) -> Void
+    public typealias VisionPredictCompletionHandler = (Result<DepthLivenessDataModel?, FaceLivenessDetectionError>) -> Void
+    let onCompletion: CompletionHandler
+    var visionPredictCompletion: VisionPredictCompletionHandler?
 
     public init(
         sessionID: String,
@@ -30,20 +33,22 @@ public struct FaceLivenessDetectorView: View {
         region: String,
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
-        onCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void
+        depthCameraSupported: Bool = false,
+        onCompletion: @escaping CompletionHandler,
+        visionPredictCompletion: VisionPredictCompletionHandler? = nil
     ) {
         self.disableStartView = disableStartView
         self._isPresented = isPresented
         self.onCompletion = onCompletion
-
+        self.visionPredictCompletion
         self.sessionTask = Task {
             let session = try await AWSPredictionsPlugin.startFaceLivenessSession(
                 withID: sessionID,
                 credentialsProvider: credentialsProvider,
                 region: region,
                 options: .init(),
-                completion: map(detectionCompletion: onCompletion)
-            )
+                completion: map(detectionCompletion: onCompletion))
+
             return session
         }
 
@@ -58,19 +63,39 @@ public struct FaceLivenessDetectorView: View {
             assetWriterInput: LivenessAVAssetWriterInput()
         )
 
-        let avCpatureDevice = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera],
-            mediaType: .video,
-            position: .front
-        ).devices.first
-
-        let captureSession = LivenessCaptureSession(
-            captureDevice: .init(avCaptureDevice: avCpatureDevice),
-            outputDelegate: OutputSampleBufferCapturer(
-                faceDetector: faceDetector,
-                videoChunker: videoChunker
+        let captureSession: LivenessCaptureSessionProtocol
+        
+        func discoverCaptureDevice(_ deviceType: AVCaptureDevice.DeviceType, position: AVCaptureDevice.Position)  -> AVCaptureDevice? {
+            let discoverySession = AVCaptureDevice.DiscoverySession(
+                deviceTypes: [deviceType],
+                mediaType: .video,
+                position: position
             )
-        )
+            return discoverySession.devices.first
+        }
+        
+        // Might violate SOLID SRP, could do better on this
+        let discoveredTrueDepthDevice = discoverCaptureDevice(.builtInTrueDepthCamera, position: .front)
+        let discoveredWideAngleDevice = discoverCaptureDevice(.builtInWideAngleCamera, position: .front)
+        let outputSampleBufferCapturer = OutputSampleBufferCapturer(faceDetector: faceDetector, videoChunker: videoChunker)
+        
+        let depthCaptureSessionEnabled = depthCameraSupported && discoveredTrueDepthDevice != nil
+        let avCaptureDevice = depthCaptureSessionEnabled ? discoveredTrueDepthDevice : discoveredWideAngleDevice
+        // workaround for checking if a device supports true depth camera
+        if depthCaptureSessionEnabled {
+            outputSampleBufferCapturer.depthDataOutput = AVCaptureDepthDataOutput()
+            outputSampleBufferCapturer.videoDataOutput = AVCaptureVideoDataOutput()
+
+            captureSession = DepthLivenessCaptureSession(
+                captureDevice: .init(avCaptureDevice: avCaptureDevice),
+                outputDelegate: outputSampleBufferCapturer
+            )
+        } else {
+            captureSession = LivenessCaptureSession(
+                captureDevice: .init(avCaptureDevice: avCaptureDevice),
+                outputDelegate: outputSampleBufferCapturer
+            )
+        }
 
         self._viewModel = StateObject(
             wrappedValue: .init(
@@ -82,6 +107,17 @@ public struct FaceLivenessDetectorView: View {
                 sessionID: sessionID
             )
         )
+        
+        if depthCaptureSessionEnabled {
+            outputSampleBufferCapturer.depthLivenessCompletionHandler = { [self] result in
+                switch result {
+                case .success(let depthData):
+                    visionPredictCompletion?(.success(depthData))
+                case .failure(let error):
+                    visionPredictCompletion?(.failure(.visionPredictionError))
+                }
+            }
+        }
     }
     
     init(
@@ -90,7 +126,7 @@ public struct FaceLivenessDetectorView: View {
         region: String,
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
-        onCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void,
+        onCompletion: @escaping CompletionHandler,
         captureSession: LivenessCaptureSession
     ) {
         self.disableStartView = disableStartView
@@ -252,7 +288,7 @@ enum InstructionState {
     case display(text: String)
 }
 
-private func map(detectionCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void) -> ((Result<Void, FaceLivenessSessionError>) -> Void) {
+private func `map`(detectionCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void) -> ((Result<Void, FaceLivenessSessionError>) -> Void) {
     { result in
         switch result {
         case .success:

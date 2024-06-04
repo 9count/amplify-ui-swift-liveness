@@ -17,6 +17,7 @@ final class VideoChunker {
     let pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor
     var startTimeSeconds: Double?
     var provideSingleFrame: ((UIImage) -> Void)?
+    var finishedWriting = false
 
     init(
         assetWriter: AVAssetWriter,
@@ -44,8 +45,21 @@ final class VideoChunker {
         state = .awaitingSingleFrame
 
         // explicitly calling `endSession` is unnecessary
-        if state != .complete {
-            assetWriter.finishWriting {}
+        if state != .complete && !finishedWriting {
+            if assetWriter.status == .writing {
+                for input in assetWriter.inputs {
+                    input.markAsFinished()
+                }
+            }
+            assetWriter.finishWriting { [weak self] in
+                DispatchQueue.main.async {
+                    if self?.assetWriter.status == .completed {
+                        self?.finishedWriting = true
+                    } else {
+                        debugPrint("asset writer status error : \(self?.assetWriter.error?.localizedDescription)")
+                    }
+                }
+            }
         }
     }
 
