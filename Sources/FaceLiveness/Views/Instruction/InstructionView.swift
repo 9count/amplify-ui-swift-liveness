@@ -14,13 +14,11 @@ struct InstructionView: View {
     var font: Font = .body
     
     var body: some View {
-        if !text.isEmpty {
-            Text(text)
-                .foregroundColor(textColor)
-                .font(font)
-                .padding(12)
-                .background(backgroundColor)
-                .cornerRadius(8)
-        }
+        Text(text)
+            .foregroundColor(textColor)
+            .font(font)
+            .padding(12)
+            .background(backgroundColor)
+            .cornerRadius(8)
     }
 }
