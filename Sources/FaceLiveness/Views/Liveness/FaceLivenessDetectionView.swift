@@ -58,19 +58,36 @@ public struct FaceLivenessDetectorView: View {
             assetWriterInput: LivenessAVAssetWriterInput()
         )
 
-        let avCpatureDevice = AVCaptureDevice.DiscoverySession(
+        let fallbackAVCaptureDevice = AVCaptureDevice.DiscoverySession(
             deviceTypes: [.builtInWideAngleCamera],
             mediaType: .video,
             position: .front
         ).devices.first
+        
+        let depthAVCaptureDevice = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInTrueDepthCamera],
+            mediaType: .video,
+            position: .front
+        ).devices.first
 
-        let captureSession = LivenessCaptureSession(
-            captureDevice: .init(avCaptureDevice: avCpatureDevice),
-            outputDelegate: OutputSampleBufferCapturer(
-                faceDetector: faceDetector,
-                videoChunker: videoChunker
-            )
-        )
+        
+        let captureSession: LivenessCaptureSessionProtocol = {
+            if let depthAVCaptureDevice {
+                return DepthCaptureSession(
+                    captureDevice: .init(avCaptureDevice: depthAVCaptureDevice),
+                    faceDetector: faceDetector,
+                    videoChunker: videoChunker
+                )
+            } else {
+                return LivenessCaptureSession(
+                    captureDevice: .init(avCaptureDevice: fallbackAVCaptureDevice),
+                    outputDelegate: OutputSampleBufferCapturer(
+                        faceDetector: faceDetector,
+                        videoChunker: videoChunker
+                    )
+                )
+            }
+        }()
 
         self._viewModel = StateObject(
             wrappedValue: .init(

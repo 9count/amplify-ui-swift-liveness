@@ -5,29 +5,29 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
-import UIKit
+import Foundation
 import AVFoundation
 
-protocol LivenessCaptureSessionProtocol {
-    func startSession(frame: CGRect) throws -> CALayer
-    func startSession() throws
-    func stopRunning()
-}
-
-class LivenessCaptureSession: LivenessCaptureSessionProtocol {
-    let captureDevice: LivenessCaptureDevice
+class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
+    let captureDevice: DepthLivenessCaptureDevice
     private let captureQueue = DispatchQueue(label: "com.amazonaws.faceliveness.cameracapturequeue")
     private let configurationQueue = DispatchQueue(label: "com.amazonaws.faceliveness.sessionconfiguration", qos: .userInitiated)
-    let outputDelegate: AVCaptureVideoDataOutputSampleBufferDelegate
+    let faceDetector: FaceDetector
+    let videoChunker: VideoChunker
     var captureSession: AVCaptureSession?
-    
-    var outputSampleBufferCapturer: OutputSampleBufferCapturer? {
-        return outputDelegate as? OutputSampleBufferCapturer
-    }
+    private var outputSynchronizer: AVCaptureDataOutputSynchronizer?
+    private var videoOutput: AVCaptureVideoDataOutput?
+    private var depthOutput: AVCaptureDepthDataOutput?
 
-    init(captureDevice: LivenessCaptureDevice, outputDelegate: AVCaptureVideoDataOutputSampleBufferDelegate) {
+    // MARK: Video processing helpers
+    private let videoDepthConverter = DepthToJETConverter()
+    private let videoDepthMixer = VideoMixer()
+    private let livenessPredictor = LivenessPredictor()
+
+    init(captureDevice: DepthLivenessCaptureDevice, faceDetector: FaceDetector, videoChunker: VideoChunker) {
         self.captureDevice = captureDevice
-        self.outputDelegate = outputDelegate
+        self.faceDetector = faceDetector
+        self.videoChunker = videoChunker
     }
 
     func startSession(frame: CGRect) throws -> CALayer {
@@ -51,6 +51,7 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
 
         let cameraInput = try AVCaptureDeviceInput(device: camera)
         let videoOutput = AVCaptureVideoDataOutput()
+        let depthOutput = AVCaptureDepthDataOutput()
 
         teardownExistingSession(input: cameraInput)
         captureSession = AVCaptureSession()
@@ -62,16 +63,16 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
         try setupInput(cameraInput, for: captureSession)
         captureSession.sessionPreset = captureDevice.preset
         try setupOutput(videoOutput, for: captureSession)
+        try setupDepthOutput(depthOutput, for: captureSession)
         try captureDevice.configure()
 
         configurationQueue.async {
             captureSession.startRunning()
         }
 
-        videoOutput.setSampleBufferDelegate(
-            outputDelegate,
-            queue: captureQueue
-        )
+        outputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoOutput, depthOutput])
+        outputSynchronizer?.setDelegate(self, queue: captureQueue)
+
     }
 
     func stopRunning() {
@@ -130,6 +131,16 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
                 $0.isVideoMirrored = true
         }
     }
+    
+    private func setupDepthOutput(
+        _ output: AVCaptureDepthDataOutput,
+        for captureSession: AVCaptureSession) throws {
+            if captureSession.canAddOutput(output) {
+                captureSession.addOutput(output)
+            } else {
+                throw LivenessCaptureSessionError.captureSessionOutputUnavailable
+            }
+    }
 
     private func previewLayer(
         frame: CGRect,
@@ -140,5 +151,49 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
         previewLayer.connection?.videoOrientation = .portrait
         previewLayer.frame = frame
         return previewLayer
+    }
+}
+
+extension DepthCaptureSession: AVCaptureDataOutputSynchronizerDelegate {
+    func dataOutputSynchronizer(_ synchronizer: AVCaptureDataOutputSynchronizer, didOutput synchronizedDataCollection: AVCaptureSynchronizedDataCollection) {
+        guard
+            let depthOutput, let videoOutput,
+            let syncedDepthData: AVCaptureSynchronizedDepthData = synchronizedDataCollection.synchronizedData(for: depthOutput) as? AVCaptureSynchronizedDepthData,
+            let syncedVideoData: AVCaptureSynchronizedSampleBufferData = synchronizedDataCollection.synchronizedData(for: videoOutput) as? AVCaptureSynchronizedSampleBufferData else {
+            return
+        }
+        
+        if syncedDepthData.depthDataWasDropped || syncedVideoData.sampleBufferWasDropped { return }
+        let depthData = syncedDepthData.depthData
+        let depthPixelBuffer = depthData.depthDataMap
+        let sampleBuffer = syncedVideoData.sampleBuffer
+        
+        videoChunker.consume(sampleBuffer)   
+        guard
+            let videoPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
+            let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
+        else {
+            return
+        }
+
+        faceDetector.detectFaces(from: videoPixelBuffer)
+        
+        
+        if !videoDepthConverter.isPrepared {
+            var depthFormatDescription: CMFormatDescription?
+            CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: depthPixelBuffer, formatDescriptionOut: &depthFormatDescription)
+            videoDepthConverter.prepare(with: depthFormatDescription!, outputRetainedBufferCountHint: 2)
+        }
+        
+        guard let jetPixelBuffer = videoDepthConverter.render(pixelBuffer: depthPixelBuffer) else {
+            debugPrint("unable to process depth")
+            return
+        }
+        
+        if !videoDepthMixer.isPrepared {
+            videoDepthMixer.prepare(with: formatDescription, outputRetainedBufferCountHint: 3)
+        }
+        
+        guard let mixedBuffer = videoDepthMixer.mix(videoPixelBuffer: videoPixelBuffer, depthPixelBuffer: jetPixelBuffer) else { return }
     }
 }

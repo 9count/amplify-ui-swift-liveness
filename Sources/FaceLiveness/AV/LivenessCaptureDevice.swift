@@ -37,3 +37,21 @@ struct LivenessCaptureDevice {
         }
     }
 }
+
+struct DepthLivenessCaptureDevice {
+    let avCaptureDevice: AVCaptureDevice?
+    var preset: AVCaptureSession.Preset = .vga640x480
+    
+    func configure() throws {
+        guard let avCaptureDevice else { throw LivenessCaptureSessionError.cameraUnavailable }
+        try avCaptureDevice.lockForConfiguration()
+        defer { avCaptureDevice.unlockForConfiguration() }
+        let depthFormats = avCaptureDevice.activeFormat.supportedDepthDataFormats
+        let filtered = depthFormats.filter { CMFormatDescriptionGetMediaSubType($0.formatDescription) == kCVPixelFormatType_DepthFloat16 }
+        let selectedFormat = filtered.max(by: { first, second in
+            CMVideoFormatDescriptionGetDimensions(first.formatDescription).width < CMVideoFormatDescriptionGetDimensions(second.formatDescription).width
+        })
+        
+        avCaptureDevice.activeDepthDataFormat = selectedFormat
+    }
+}
