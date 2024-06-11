@@ -41,6 +41,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
     var initialClientEvent: InitialClientEvent?
     var faceMatchedTimestamp: UInt64?
     var noFitStartTime: Date?
+    var depthCaptureCompletion: DepthCaptureCompletion?
     
     var noFitTimeoutInterval: TimeInterval {
         if let sessionTimeoutMilliSec = sessionConfiguration?.ovalMatchChallenge.oval.ovalFitTimeout {
@@ -57,7 +58,8 @@ class FaceLivenessDetectionViewModel: ObservableObject {
         videoChunker: VideoChunker,
         stateMachine: LivenessStateMachine = .init(state: .initial),
         closeButtonAction: @escaping () -> Void,
-        sessionID: String
+        sessionID: String,
+        onDepthCaptureCompletion: DepthCaptureCompletion? = nil
     ) {
         self.closeButtonAction = closeButtonAction
         self.videoChunker = videoChunker
@@ -66,7 +68,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
         self.captureSession = captureSession
         self.faceDetector = faceDetector
         self.faceInOvalMatching = faceInOvalMatching
-
+        self.depthCaptureCompletion = onDepthCaptureCompletion
         self.closeButtonAction = { [weak self] in
             guard let self else { return }
             DispatchQueue.main.async {
@@ -243,6 +245,7 @@ class FaceLivenessDetectionViewModel: ObservableObject {
                 .initialFaceDetected(event: _initialClientEvent),
                 eventDate: { .init() }
             )
+            captureSession.capture(completion: depthCaptureCompletion)
         } catch {
             DispatchQueue.main.async {
                 self.livenessState.unrecoverableStateEncountered(.unknown)

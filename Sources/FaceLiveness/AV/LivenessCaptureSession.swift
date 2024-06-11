@@ -12,6 +12,7 @@ protocol LivenessCaptureSessionProtocol {
     func startSession(frame: CGRect) throws -> CALayer
     func startSession() throws
     func stopRunning()
+    func capture(completion: ((LivenessPredictor.Liveness, UIImage) -> ())?)
 }
 
 class LivenessCaptureSession: LivenessCaptureSessionProtocol {
@@ -141,4 +142,6 @@ class LivenessCaptureSession: LivenessCaptureSessionProtocol {
         previewLayer.frame = frame
         return previewLayer
     }
+    
+    func capture(completion: ((LivenessPredictor.Liveness, UIImage) -> ())?) { }
 }

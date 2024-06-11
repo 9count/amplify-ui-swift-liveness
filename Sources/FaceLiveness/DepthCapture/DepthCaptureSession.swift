@@ -7,6 +7,7 @@
 
 import Foundation
 import AVFoundation
+import UIKit
 
 class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
     let captureDevice: DepthLivenessCaptureDevice
@@ -18,6 +19,7 @@ class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
     private var outputSynchronizer: AVCaptureDataOutputSynchronizer?
     private var videoOutput: AVCaptureVideoDataOutput?
     private var depthOutput: AVCaptureDepthDataOutput?
+    var capturedJETPixelBuffer: CVPixelBuffer?
 
     // MARK: Video processing helpers
     private let videoDepthConverter = DepthToJETConverter()
@@ -168,14 +170,14 @@ extension DepthCaptureSession: AVCaptureDataOutputSynchronizerDelegate {
         let depthPixelBuffer = depthData.depthDataMap
         let sampleBuffer = syncedVideoData.sampleBuffer
         
-        videoChunker.consume(sampleBuffer)   
+        videoChunker.consume(sampleBuffer)
         guard
             let videoPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
             let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
         else {
             return
         }
-
+        
         faceDetector.detectFaces(from: videoPixelBuffer)
         
         
@@ -195,5 +197,19 @@ extension DepthCaptureSession: AVCaptureDataOutputSynchronizerDelegate {
         }
         
         guard let mixedBuffer = videoDepthMixer.mix(videoPixelBuffer: videoPixelBuffer, depthPixelBuffer: jetPixelBuffer) else { return }
+        self.capturedJETPixelBuffer = jetPixelBuffer
+    }
+    
+    func capture(completion: ((LivenessPredictor.Liveness, UIImage) -> ())?) {
+        guard let pixelBuffer = capturedJETPixelBuffer else { return }
+        
+        guard let uiImage = UIImage(pixelBuffer: pixelBuffer) else { return }
+        do {
+            try self.livenessPredictor.makePrediction(for: uiImage) { liveness in
+                completion?(liveness, uiImage)
+            }
+        } catch {
+            debugPrint("predictor failure")
+        }
     }
 }
