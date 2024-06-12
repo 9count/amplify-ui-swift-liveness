@@ -34,9 +34,9 @@ public class LivenessPredictor {
         return imageClassifierVisionModel
     }
     
-    public enum Liveness: String {
-        case real = "Real"
-        case fake = "Fake"
+    public enum Liveness {
+        case real(confidence: VNConfidence)
+        case fake(confidence: VNConfidence)
     }
     
     public typealias LivenessPredictionHandler = (_ liveness: Liveness) -> Void
@@ -83,12 +83,12 @@ public class LivenessPredictor {
         }
         
         if let error {
-            print("Vision liveness classification error... \n\n\(error.localizedDescription)")
+            debugPrint("Vision liveness classification error... \n\n\(error.localizedDescription)")
             return
         }
         
         if request.results == nil {
-            print("Vision request had no results.")
+            debugPrint("Vision request had no results.")
             return
         }
         
@@ -96,15 +96,13 @@ public class LivenessPredictor {
             let observations = request.results as? [VNClassificationObservation],
             let result = observations.first
         else {
-            print("VNRequest produced the wrong result type: \(type(of: request.results)).")
+            debugPrint("VNRequest produced the wrong result type: \(type(of: request.results)).")
             return
         }
         
-        guard let liveness = Liveness(rawValue: result.identifier) else {
-            return
-        }
-        
-        predictionHandler(liveness)
+        predictionHandler(result.identifier == "Real"
+              ? .real(confidence: result.confidence)
+              : .fake(confidence: result.confidence))
     }
 }
 

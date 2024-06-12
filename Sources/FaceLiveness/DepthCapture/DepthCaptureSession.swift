@@ -9,27 +9,30 @@ import Foundation
 import AVFoundation
 import UIKit
 
-class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
+class DepthCaptureSession: LivenessCaptureSessionProtocol {
+    func capture(completion: ((DepthLivenessDataModel) -> ())?) {
+        outputSampleBufferCapturer?.capture(completion: { dataModel in
+            completion?(dataModel)
+        })
+    }
+    
     let captureDevice: DepthLivenessCaptureDevice
     private let captureQueue = DispatchQueue(label: "com.amazonaws.faceliveness.cameracapturequeue")
     private let configurationQueue = DispatchQueue(label: "com.amazonaws.faceliveness.sessionconfiguration", qos: .userInitiated)
-    let faceDetector: FaceDetector
-    let videoChunker: VideoChunker
     var captureSession: AVCaptureSession?
     private var outputSynchronizer: AVCaptureDataOutputSynchronizer?
     private var videoOutput: AVCaptureVideoDataOutput?
     private var depthOutput: AVCaptureDepthDataOutput?
-    var capturedJETPixelBuffer: CVPixelBuffer?
+    let outputDelegate: AVCaptureDataOutputSynchronizerDelegate
+    
+    var outputSampleBufferCapturer: DepthOutputSampleBufferCapturer? {
+        return outputDelegate as? DepthOutputSampleBufferCapturer
+    }
 
-    // MARK: Video processing helpers
-    private let videoDepthConverter = DepthToJETConverter()
-    private let videoDepthMixer = VideoMixer()
-    private let livenessPredictor = LivenessPredictor()
 
-    init(captureDevice: DepthLivenessCaptureDevice, faceDetector: FaceDetector, videoChunker: VideoChunker) {
+    init(captureDevice: DepthLivenessCaptureDevice, outputDelegate: AVCaptureDataOutputSynchronizerDelegate) {
         self.captureDevice = captureDevice
-        self.faceDetector = faceDetector
-        self.videoChunker = videoChunker
+        self.outputDelegate = outputDelegate
     }
 
     func startSession(frame: CGRect) throws -> CALayer {
@@ -50,31 +53,33 @@ class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
     func startSession() throws {
         guard let camera = captureDevice.avCaptureDevice
         else { throw LivenessCaptureSessionError.cameraUnavailable }
+            captureSession?.beginConfiguration()
 
-        let cameraInput = try AVCaptureDeviceInput(device: camera)
-        let videoOutput = AVCaptureVideoDataOutput()
-        let depthOutput = AVCaptureDepthDataOutput()
-
-        teardownExistingSession(input: cameraInput)
-        captureSession = AVCaptureSession()
-
-        guard let captureSession = captureSession else {
-            throw LivenessCaptureSessionError.captureSessionUnavailable
-        }
-
-        try setupInput(cameraInput, for: captureSession)
-        captureSession.sessionPreset = captureDevice.preset
-        try setupOutput(videoOutput, for: captureSession)
-        try setupDepthOutput(depthOutput, for: captureSession)
-        try captureDevice.configure()
+            let cameraInput = try AVCaptureDeviceInput(device: camera)
+            let videoOutput = AVCaptureVideoDataOutput()
+            let depthOutput = AVCaptureDepthDataOutput()
+        outputSampleBufferCapturer?.depthOutput = depthOutput
+        outputSampleBufferCapturer?.videoOutput = videoOutput
+            teardownExistingSession(input: cameraInput)
+            captureSession = AVCaptureSession()
+            
+            guard let captureSession = captureSession else {
+                throw LivenessCaptureSessionError.captureSessionUnavailable
+            }
+            
+            try setupInput(cameraInput, for: captureSession)
+            captureSession.sessionPreset = captureDevice.preset
+            try setupOutput(videoOutput, for: captureSession)
+            try setupDepthOutput(depthOutput, for: captureSession)
+            try captureDevice.configure()
+            
+            outputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoOutput, depthOutput])
+            outputSynchronizer!.setDelegate(outputSampleBufferCapturer, queue: captureQueue)
+        captureSession.commitConfiguration()
 
         configurationQueue.async {
-            captureSession.startRunning()
+            self.captureSession?.startRunning()
         }
-
-        outputSynchronizer = AVCaptureDataOutputSynchronizer(dataOutputs: [videoOutput, depthOutput])
-        outputSynchronizer?.setDelegate(self, queue: captureQueue)
-
     }
 
     func stopRunning() {
@@ -123,14 +128,13 @@ class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
             throw LivenessCaptureSessionError.captureSessionOutputUnavailable
         }
         output.videoSettings = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
         ]
 
-        output.connections
-            .filter(\.isVideoOrientationSupported)
-            .forEach {
-                $0.videoOrientation = .portrait
-                $0.isVideoMirrored = true
+        if let connection = output.connection(with: .video) {
+            connection.isEnabled = true
+            connection.isVideoMirrored = true
+            connection.videoOrientation = .portrait
         }
     }
     
@@ -140,7 +144,11 @@ class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
             if captureSession.canAddOutput(output) {
                 captureSession.addOutput(output)
             } else {
-                throw LivenessCaptureSessionError.captureSessionOutputUnavailable
+                if let connection = output.connection(with: .depthData) {
+                    connection.isEnabled = true
+                } else {
+                    throw LivenessCaptureSessionError.cameraUnavailable
+                }
             }
     }
 
@@ -156,60 +164,7 @@ class DepthCaptureSession: NSObject, LivenessCaptureSessionProtocol {
     }
 }
 
-extension DepthCaptureSession: AVCaptureDataOutputSynchronizerDelegate {
-    func dataOutputSynchronizer(_ synchronizer: AVCaptureDataOutputSynchronizer, didOutput synchronizedDataCollection: AVCaptureSynchronizedDataCollection) {
-        guard
-            let depthOutput, let videoOutput,
-            let syncedDepthData: AVCaptureSynchronizedDepthData = synchronizedDataCollection.synchronizedData(for: depthOutput) as? AVCaptureSynchronizedDepthData,
-            let syncedVideoData: AVCaptureSynchronizedSampleBufferData = synchronizedDataCollection.synchronizedData(for: videoOutput) as? AVCaptureSynchronizedSampleBufferData else {
-            return
-        }
-        
-        if syncedDepthData.depthDataWasDropped || syncedVideoData.sampleBufferWasDropped { return }
-        let depthData = syncedDepthData.depthData
-        let depthPixelBuffer = depthData.depthDataMap
-        let sampleBuffer = syncedVideoData.sampleBuffer
-        
-        videoChunker.consume(sampleBuffer)
-        guard
-            let videoPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer),
-            let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
-        else {
-            return
-        }
-        
-        faceDetector.detectFaces(from: videoPixelBuffer)
-        
-        
-        if !videoDepthConverter.isPrepared {
-            var depthFormatDescription: CMFormatDescription?
-            CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: depthPixelBuffer, formatDescriptionOut: &depthFormatDescription)
-            videoDepthConverter.prepare(with: depthFormatDescription!, outputRetainedBufferCountHint: 2)
-        }
-        
-        guard let jetPixelBuffer = videoDepthConverter.render(pixelBuffer: depthPixelBuffer) else {
-            debugPrint("unable to process depth")
-            return
-        }
-        
-        if !videoDepthMixer.isPrepared {
-            videoDepthMixer.prepare(with: formatDescription, outputRetainedBufferCountHint: 3)
-        }
-        
-        guard let mixedBuffer = videoDepthMixer.mix(videoPixelBuffer: videoPixelBuffer, depthPixelBuffer: jetPixelBuffer) else { return }
-        self.capturedJETPixelBuffer = jetPixelBuffer
-    }
-    
-    func capture(completion: ((LivenessPredictor.Liveness, UIImage) -> ())?) {
-        guard let pixelBuffer = capturedJETPixelBuffer else { return }
-        
-        guard let uiImage = UIImage(pixelBuffer: pixelBuffer) else { return }
-        do {
-            try self.livenessPredictor.makePrediction(for: uiImage) { liveness in
-                completion?(liveness, uiImage)
-            }
-        } catch {
-            debugPrint("predictor failure")
-        }
-    }
+public struct DepthLivenessDataModel {
+    public var liveness: LivenessPredictor.Liveness
+    public var depthUIImage: UIImage
 }

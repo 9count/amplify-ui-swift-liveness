@@ -12,7 +12,7 @@ import AWSPredictionsPlugin
 import AVFoundation
 import Amplify
 @_spi(PredictionsFaceLiveness) import AWSPredictionsPlugin
-public typealias DepthCaptureCompletion = (LivenessPredictor.Liveness, UIImage) -> Void
+public typealias DepthCaptureCompletion = (DepthLivenessDataModel) -> Void
 public struct FaceLivenessDetectorView: View {
     @StateObject var viewModel: FaceLivenessDetectionViewModel
     @Binding var isPresented: Bool
@@ -31,6 +31,7 @@ public struct FaceLivenessDetectorView: View {
         disableStartView: Bool = false,
         isPresented: Binding<Bool>,
         onCompletion: @escaping (Result<Void, FaceLivenessDetectionError>) -> Void,
+        initDepthCaptureSession: Bool,
         onDepthCaptureCompletion: DepthCaptureCompletion?
     ) {
         self.disableStartView = disableStartView
@@ -73,11 +74,10 @@ public struct FaceLivenessDetectorView: View {
 
         
         let captureSession: LivenessCaptureSessionProtocol = {
-            if let depthAVCaptureDevice {
+            if let depthAVCaptureDevice, initDepthCaptureSession {
                 return DepthCaptureSession(
                     captureDevice: .init(avCaptureDevice: depthAVCaptureDevice),
-                    faceDetector: faceDetector,
-                    videoChunker: videoChunker
+                    outputDelegate: DepthOutputSampleBufferCapturer(faceDetector: faceDetector, videoChunker: videoChunker)
                 )
             } else {
                 return LivenessCaptureSession(
